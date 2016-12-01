@@ -1,6 +1,7 @@
 package runwar.options;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Comparator;
 
 //import static java.io.File.*;
@@ -8,6 +9,8 @@ import java.util.Comparator;
 //
 //import joptsimple.OptionParser;
 //import joptsimple.OptionSet;
+
+import java.util.List;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.HelpFormatter;
@@ -174,7 +177,7 @@ public class CommandLineHandler {
         options.addOption( OptionBuilder
                 .withLongOpt( "dirs" )
                 .withDescription( "List of external directories to serve from" )
-                .hasArg().withArgName("path,path,...")
+                .hasArg().withArgName("path,path,... or alias=path,..")
                 .create("d") );
         
         options.addOption( OptionBuilder
@@ -358,6 +361,36 @@ public class CommandLineHandler {
                 .hasArg().withArgName("path/to/sql/file")
                 .create("mariadb4jimport") );
         
+        options.addOption( OptionBuilder
+                .withLongOpt( "jvm-args" )
+                .withDescription( "JVM arguments for background process." )
+                .hasArg().withArgName("option=value,option=value")
+                .create("jvmargs") );
+        
+        options.addOption( OptionBuilder
+                .withLongOpt( "error-pages" )
+                .withDescription( "List of error codes and locations, no code or '1' will set the default" )
+                .hasArg().withArgName("404=/location,500=/location")
+                .create("errorpages") );
+        
+        options.addOption( OptionBuilder
+                .withLongOpt( "servlet-rest-enable" )
+                .withDescription( "Enable an embedded CFML server REST servlet" )
+                .hasArg().withArgName("true|false").withType(Boolean.class)
+                .create("servletrest") );
+
+        options.addOption( OptionBuilder
+                .withLongOpt( "servlet-rest-mappings" )
+                .withDescription( "Embedded CFML server REST servlet URL mapping paths, comma separated [/rest/*]" )
+                .hasArg().withArgName("/rest/*,/api/*")
+                .create("servletrestmappings") );
+
+        options.addOption( OptionBuilder
+                .withLongOpt( "filter-pathinfo-enable" )
+                .withDescription( "Enable (*.cf[c|m])(/.*) handling, setting cgi.PATH_INFO to $2" )
+                .hasArg().withArgName("true|false").withType(Boolean.class)
+                .create("filterpathinfo") );
+
         options.addOption( new Option( "h", "help", false, "print this message" ) );
         options.addOption( new Option( "v", "version", false, "print runwar version and undertow version" ) );
 
@@ -612,6 +645,26 @@ public class CommandLineHandler {
             }
             if (line.hasOption("mariadb4jimport") && line.getOptionValue("mariadb4jimport").length() > 0) {
                 serverOptions.setMariaDB4jImportSQLFile(new File(line.getOptionValue("mariadb4jimport")));
+            }
+            if (line.hasOption("jvmargs") && line.getOptionValue("jvmargs").length() > 0) {
+                List<String> jvmArgs = new ArrayList<String>();
+                String[] jvmArgArray = line.getOptionValue("jvmargs").split(";");
+                for(String arg : jvmArgArray) {
+                    jvmArgs.add(arg);
+                }
+                serverOptions.setJVMArgs(jvmArgs);
+            }
+            if (line.hasOption("errorpages") && line.getOptionValue("errorpages").length() > 0) {
+                serverOptions.setErrorPages(line.getOptionValue("errorpages"));
+            }
+            if (line.hasOption("servletrest") && line.getOptionValue("servletrest").length() > 0) {
+                serverOptions.setServletRestEnabled(Boolean.valueOf(line.getOptionValue("servletrest")));
+            }
+            if (line.hasOption("servletrestmappings") && line.getOptionValue("servletrestmappings").length() > 0) {
+                serverOptions.setServletRestMappings(line.getOptionValue("servletrestmappings"));
+            }
+            if (line.hasOption("filterpathinfo") && line.getOptionValue("filterpathinfo").length() > 0) {
+                serverOptions.setFilterPathInfoEnabled(Boolean.valueOf(line.getOptionValue("filterpathinfo")));
             }
             if(serverOptions.getLoglevel().equals("DEBUG")) {
     	    	for(Option arg: line.getOptions()) {

@@ -1,16 +1,17 @@
 package runwar;
 
-import java.awt.AWTException;
+import java.awt.GraphicsEnvironment;
 import java.awt.Image;
-import java.awt.MenuItem;
-import java.awt.PopupMenu;
-import java.awt.SystemTray;
 import java.awt.Toolkit;
-import java.awt.TrayIcon;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.awt.event.MouseEvent;
-import java.awt.event.MouseListener;
+
+import dorkbox.systemTray.MenuEntry;
+import dorkbox.systemTray.SystemTray;
+import dorkbox.systemTray.SystemTrayMenuAction;
+import dorkbox.util.ActionHandler;
+import dorkbox.util.OS;
+import dorkbox.notify.Notify;
+import dorkbox.notify.Pos;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -33,8 +34,10 @@ import java.net.URL;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -54,13 +57,16 @@ import net.minidev.json.JSONObject;
 import net.minidev.json.JSONValue;
 import runwar.logging.Logger;
 import runwar.options.ServerOptions;
+import sun.awt.OSInfo.OSType;
 
 public class LaunchUtil {
 
-    private static TrayIcon trayIcon;
     private static Logger log = Logger.getLogger("RunwarLogger");
     private static boolean relaunching;
     private static final int KB = 1024;
+    private static SystemTray systemTray;
+    private static Notify notify;
+    private static String processName;
     public static final Set<String> replicateProps = new HashSet<String>(Arrays.asList(new String[] { "cfml.cli.home",
             "cfml.server.config.dir", "cfml.web.config.dir", "cfml.server.trayicon", "cfml.server.dockicon" }));
 
@@ -78,7 +84,7 @@ public class LaunchUtil {
         // if(debug)System.out.println("Java: "+javaPath);
         return exe;
     }
-    
+
     public static File getJarDir(Class<?> aclass) {
         URL url;
         String extURL;
@@ -106,7 +112,7 @@ public class LaunchUtil {
             return new File(url.getPath());
         }
     }
-    
+
     public static void launch(List<String> cmdarray, int timeout) throws IOException, InterruptedException {
         // byte[] buffer = new byte[1024];
 
@@ -182,7 +188,7 @@ public class LaunchUtil {
         }
     }
 
-    public static void relaunchAsBackgroundProcess(int timeout, String[] args, String processName) {
+    public static void relaunchAsBackgroundProcess(int timeout, String[] args, List<String> jvmArgs, String processName) {
         try {
             if (relaunching)
                 return;
@@ -193,8 +199,8 @@ public class LaunchUtil {
             decodedPath = new File(decodedPath).getPath();
             List<String> cmdarray = new ArrayList<String>();
             cmdarray.add(getJreExecutable().toString());
-            List<String> currentVMArgs = getCurrentVMArgs();
-            for (String arg : currentVMArgs) {
+            List<String> VMArgs = jvmArgs != null ? jvmArgs : getCurrentVMArgs();
+            for (String arg : VMArgs) {
                 cmdarray.add(arg);
             }
             cmdarray.add("-jar");
@@ -268,6 +274,26 @@ public class LaunchUtil {
     }
 
     public static void hookTray(Server server) {
+//        SystemTray.COMPATIBILITY_MODE = true;
+        SystemTray.FORCE_GTK2 = true;
+//        SystemTray.FORCE_LINUX_TYPE = SystemTray.LINUX_GTK;
+//        SystemTray.FORCE_SWT = true;
+        processName = server.getServerOptions().getProcessName();
+////        System.setProperty("SWT_GTK3", "0");
+        if ( GraphicsEnvironment.isHeadless() ) {
+            log.debug("Server is in headless mode, System Tray is not supported");
+            return;
+        }
+        try{
+            systemTray = SystemTray.getSystemTray();
+        } catch (java.lang.ExceptionInInitializerError e) {
+            log.debug(e);
+        }
+        if ( systemTray == null ) {
+            log.warn("System Tray is not supported");
+            return;
+        }
+
         ServerOptions serverOptions = Server.getServerOptions();
         String iconImage = serverOptions.getIconImage();
         String host = serverOptions.getHost();
@@ -276,98 +302,128 @@ public class LaunchUtil {
         String processName = serverOptions.getProcessName();
         String PID = server.getPID();
 
-        if (SystemTray.isSupported()) {
-            Image image = getIconImage(iconImage);
-            MouseListener mouseListener = new MouseListener() {
-                public void mouseClicked(MouseEvent e) {
-                }
+        setIconImage(iconImage);
+        final String statusText = processName + " server on " + host + ":" + portNumber + " PID:" + PID;
+        
+        HashMap<String,String> variableMap = new HashMap<String,String>();
+        variableMap.put("defaultTitle", statusText);
+        variableMap.put("runwar.port", Integer.toString(portNumber));
+        variableMap.put("runwar.processName", processName);
+        variableMap.put("runwar.host", host);
+        variableMap.put("runwar.stopsocket", Integer.toString(stopSocket));
 
-                public void mouseEntered(MouseEvent e) {
-                }
+        final String defaultMenu = "{\"title\" : \"${defaultTitle}\", \"items\": ["
+                + "{label:\"Stop Server (${runwar.processName})\", action:\"stopserver\"}"
+                + ",{label:\"Open Browser\", action:\"openbrowser\", url:\"http://${runwar.host}:${runwar.port}/\"}"
+                + "]}";
 
-                public void mouseExited(MouseEvent e) {
-                }
-
-                public void mousePressed(MouseEvent e) {
-                }
-
-                public void mouseReleased(MouseEvent e) {
-                }
-            };
-
-            trayIcon = new TrayIcon(image, processName + " server on " + host + ":" + portNumber + " PID:" + PID);
-
-            PopupMenu popup = new PopupMenu();
-            MenuItem item = null;
-            JSONArray menuItems;
-
-            final String defaultMenu = "["
-                    + "{label:\"Stop Server (${runwar.processName})\", action:\"stopserver\"}"
-                    + ",{label:\"Open Browser\", action:\"openbrowser\", url:\"http://${runwar.host}:${runwar.port}/\"}"
-                    + "]";
-
-            if (serverOptions.getTrayConfig() != null) {
-                menuItems = (JSONArray) JSONValue.parse(readFile(serverOptions.getTrayConfig()));
-            } else {
-                menuItems = (JSONArray) JSONValue.parse(getResourceAsString("runwar/taskbar.json"));
+        JSONObject menu;
+        if (serverOptions.getTrayConfig() != null) {
+            menu = getTrayConfig( readFile( serverOptions.getTrayConfig() ), statusText, variableMap );
+        } else {
+            menu = getTrayConfig( getResourceAsString("runwar/taskbar.json"), statusText, variableMap );
+        }
+        if (menu == null) {
+            log.error("Could not load taskbar properties");
+            menu = getTrayConfig( defaultMenu, statusText, variableMap );
+        }
+        
+        systemTray.setStatus( menu.get("title").toString() );
+        systemTray.setTooltipText( menu.get("tooltip").toString() );
+        
+        for (Object ob : (JSONArray) menu.get("items")) {
+            JSONObject itemInfo = (JSONObject) ob;
+            InputStream is = null;
+            String label = itemInfo.get("label").toString();
+            if(itemInfo.get("image") != null) {
+                is = getImageInputStream(itemInfo.get("image").toString());
             }
-            if (menuItems == null) {
-                log.error("Could not load taskbar properties");
-                menuItems = (JSONArray) JSONValue.parse(defaultMenu);
+            String imgHash = Integer.toString(label.hashCode());
+            if(itemInfo.get("disabled") != null && itemInfo.get("disabled").toString().trim().toLowerCase() == "true"){
+                systemTray.addMenuEntry(label, imgHash, is, null);
+                systemTray.updateMenuEntry_Enabled(label,false);
             }
-            for (Object ob : menuItems) {
-                JSONObject itemInfo = (JSONObject) ob;
-                String label = replaceMenuTokens(itemInfo.get("label").toString(), processName, host, portNumber,
-                        stopSocket);
+            else if(itemInfo.get("action") != null) {
                 String action = itemInfo.get("action").toString();
-                item = new MenuItem(label);
                 if (action.toLowerCase().equals("stopserver")) {
-                    item.addActionListener(new ExitActionListener());
+                    systemTray.addMenuEntry(label, imgHash, is, new ExitAction());
                 } else if (action.toLowerCase().equals("openbrowser")) {
-                    String url = replaceMenuTokens(itemInfo.get("url").toString(), processName, host, portNumber,
-                            stopSocket);
-                    item.addActionListener(new OpenBrowserActionListener(url));
+                    String url = itemInfo.get("url").toString();
+                    systemTray.addMenuEntry(label, imgHash, is, new OpenBrowserAction(url));
                 } else {
                     log.error("Unknown menu item action \"" + action + "\" for \"" + label + "\"");
                 }
-                popup.add(item);
             }
-
-            // MenuItem item = new MenuItem("Stop Server (" + processName +
-            // ")");
-            // item.addActionListener(new
-            // ExitActionListener(trayIcon,host,stopSocket));
-            // popup.add(item);
-            // item = new MenuItem("Open Browser");
-            // item.addActionListener(new
-            // OpenBrowserActionListener(trayIcon,"http://"+host+":"+portNumber
-            // + "/"));
-            // popup.add(item);
-            // item = new MenuItem("Open Admin");
-            // item.addActionListener(new
-            // OpenBrowserActionListener(trayIcon,railoAdminURL));
-            // popup.add(item);
-
-            trayIcon.setPopupMenu(popup);
-            trayIcon.setImageAutoSize(true);
-            trayIcon.addMouseListener(mouseListener);
-
             try {
-                SystemTray.getSystemTray().add(trayIcon);
-            } catch (AWTException e) {
-                System.err.println("TrayIcon could not be added.");
+                if (is != null)
+                    is.close();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-
-        } else {
-            log.warn("System Tray is not supported");
         }
+    }
+    
+    public static JSONObject getTrayConfig(String jsonText, String defaultTitle, HashMap<String, String> variableMap) {
+        JSONObject config;
+        JSONArray loadItems;
+        JSONArray items = new JSONArray();
+        if(jsonText == null) {
+            return null;
+        }
+        Object menuObject = JSONValue.parse(jsonText);
+        if(menuObject instanceof JSONArray) {
+            config = new JSONObject();
+            loadItems = (JSONArray) menuObject;
+        } else {
+            config = (JSONObject) JSONValue.parse(jsonText);
+            loadItems = (JSONArray) config.get("items");
+        }
+        config.put("title", config.get("title") != null ? config.get("title").toString() : defaultTitle );
+        config.put("title", replaceMenuTokens(config.get("title").toString(),variableMap));
+        config.put("tooltip", config.get("tooltip") != null ? config.get("tooltip").toString() : defaultTitle );
+        config.put("tooltip", replaceMenuTokens(config.get("tooltip").toString(),variableMap));
+        if (loadItems == null) {
+            loadItems = (JSONArray) JSONValue.parse("[]");
+        }
+
+        for (Object ob : loadItems) {
+            JSONObject itemInfo = (JSONObject) ob;
+            if(itemInfo.get("label") == null) {
+                log.error("No label for menu item: " + itemInfo.toJSONString());
+                continue;
+            }
+            String label = replaceMenuTokens(itemInfo.get("label").toString(), variableMap);
+            itemInfo.put("label",label);
+            if(itemInfo.get("action") != null) {
+                String action = itemInfo.get("action").toString();
+                if (action.toLowerCase().equals("stopserver") && action.toLowerCase().equals("openbrowser")) {
+                    log.error("Unknown menu item action \"" + action + "\" for \"" + label + "\"");
+                    itemInfo.put("action",null);
+                }
+            }
+            if(itemInfo.get("url") != null) {
+                itemInfo.put("action", itemInfo.get("action") != null ? itemInfo.get("action") : "openbrowser");
+                itemInfo.put("url", replaceMenuTokens( itemInfo.get("url").toString(), variableMap ));
+            }
+            items.add(itemInfo);
+        }
+        config.put("items",items);
+
+        return config;
+    }
+
+    private static String replaceMenuTokens(String string, HashMap<String,String> variableMap) {
+        for(String key : variableMap.keySet() ) {
+            string = string.replace("${" + key + "}", variableMap.get(key) );
+        }
+        return string;
     }
 
     public static void unhookTray() {
-        if (SystemTray.isSupported() && trayIcon != null) {
+        if (systemTray != null) {
             try {
                 log.debug("Removing tray icon");
-                SystemTray.getSystemTray().remove(trayIcon);
+                systemTray.shutdown();
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -420,46 +476,182 @@ public class LaunchUtil {
         return image;
     }
 
-    private static String replaceMenuTokens(String label, String processName, String host, int portNumber,
-            int stopSocket) {
-        label = label.replaceAll("\\$\\{runwar.port\\}", Integer.toString(portNumber))
-                .replaceAll("\\$\\{runwar.processName\\}", processName).replaceAll("\\$\\{runwar.host\\}", host)
-                .replaceAll("\\$\\{runwar.stopsocket\\}", Integer.toString(stopSocket));
-        return label;
+    public static void setIconImage(String iconImage) {
+        if (iconImage != null && iconImage.length() != 0) {
+            iconImage = iconImage.replaceAll("(^\")|(\"$)", "");
+            log.debug("trying to load icon: " + iconImage);
+            if (iconImage.contains("!")) {
+                String[] zip = iconImage.split("!");
+                try {
+                    ZipFile zipFile = new ZipFile(zip[0]);
+                    ZipEntry zipEntry = zipFile.getEntry(zip[1].replaceFirst("^[\\/]", ""));
+                    systemTray.setIcon( "runwar", zipFile.getInputStream(zipEntry) );
+                    zipFile.close();
+                    log.debug("loaded image from archive: " + zip[0] + zip[1]);
+                    return;
+                } catch (IOException e2) {
+                    log.debug("Could not get zip resource: " + iconImage + "(" + e2.getMessage() + ")");
+                }
+            } else if (new File(iconImage).exists()) {
+                systemTray.setIcon( iconImage );
+                return;
+            } else {
+                log.debug("trying parent loader for image: " + iconImage);
+                URL imageURL = LaunchUtil.class.getClassLoader().getParent().getResource(iconImage);
+                if (imageURL == null) {
+                    log.debug("trying loader for image: " + iconImage);
+                    imageURL = LaunchUtil.class.getClassLoader().getResource(iconImage);
+                }
+                if (imageURL != null) {
+                    log.debug("Trying getImage for: " + imageURL);
+                    systemTray.setIcon( imageURL );
+                    return;
+                }
+            }
+        }
+        // if bad image, use default
+        systemTray.setIcon( Start.class.getResource("/runwar/icon.png") );
     }
 
-    private static class OpenBrowserActionListener implements ActionListener {
+    public static InputStream getImageInputStream(String iconImage) {
+        if (iconImage != null && iconImage.length() != 0) {
+            iconImage = iconImage.replaceAll("(^\")|(\"$)", "");
+            log.debug("trying to load icon: " + iconImage);
+            if (iconImage.contains("!")) {
+                String[] zip = iconImage.split("!");
+                try {
+                    ZipFile zipFile = new ZipFile(zip[0]);
+                    ZipEntry zipEntry = zipFile.getEntry(zip[1].replaceFirst("^[\\/]", ""));
+                    return zipFile.getInputStream(zipEntry);
+                } catch (IOException e2) {
+                    log.debug("Could not get zip resource: " + iconImage + "(" + e2.getMessage() + ")");
+                }
+            } else if (new File(iconImage).exists()) {
+                try {
+                    return new FileInputStream(iconImage);
+                } catch (FileNotFoundException e) {
+                    log.debug(e);
+                }
+            } else {
+                log.debug("trying parent loader for image: " + iconImage);
+                URL imageURL = LaunchUtil.class.getClassLoader().getParent().getResource(iconImage);
+                if (imageURL == null) {
+                    log.debug("trying loader for image: " + iconImage);
+                    imageURL = LaunchUtil.class.getClassLoader().getResource(iconImage);
+                }
+                if (imageURL != null) {
+                    try {
+                        return imageURL.openStream();
+                    } catch (IOException e) {
+                        log.debug(e);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+
+    private static class OpenBrowserAction implements SystemTrayMenuAction {
         private String url;
 
-        public OpenBrowserActionListener(String url) {
+        public OpenBrowserAction(String url) {
             this.url = url;
         }
 
         @Override
-        public void actionPerformed(ActionEvent e) {
-            trayIcon.displayMessage("Browser", "Opening browser", TrayIcon.MessageType.INFO);
+        public void onClick(SystemTray systemTray, final MenuEntry menuEntry) {
+            displayMessage("Info", "Opening browser to " + url);
             openURL(url);
         }
     }
 
-    private static class ExitActionListener implements ActionListener {
+    private static class ExitAction implements SystemTrayMenuAction {
 
-        public ExitActionListener() {
+        public ExitAction() {
         }
 
         @Override
-        public void actionPerformed(ActionEvent e) {
+        public void onClick(SystemTray systemTray, final MenuEntry menuEntry) {
             try {
                 System.out.println("Exiting...");
+                systemTray.shutdown();
                 System.exit(0);
             } catch (Exception e1) {
-                trayIcon.displayMessage("Error", e1.getMessage(), TrayIcon.MessageType.INFO);
+                displayMessage("Error", e1.getMessage());
                 try {
                     Thread.sleep(5000);
                 } catch (InterruptedException e2) {
                 }
                 System.exit(1);
             }
+        }
+    }
+
+    public enum MessageType {
+        INFO, WARNING, ERROR
+    }
+
+    public static void displayMessage(String type, String text) {
+        if(type.toLowerCase().startsWith("warn")) {
+            displayMessage(processName, text, MessageType.WARNING);
+        } else if (type.toLowerCase().startsWith("error")) {
+            displayMessage(processName, text, MessageType.ERROR);
+        } else {
+            displayMessage(processName, text, MessageType.INFO);
+        }
+    }
+    
+    public static void printMessage(String title, String text, MessageType type) {
+        if(type == MessageType.ERROR) {
+            System.err.println(title + " " + text);
+        } else {
+            System.out.println(title + " " + text);
+        }
+    }
+    
+    public static void displayMessage(String title, String text, MessageType type) {
+        if(GraphicsEnvironment.isHeadless()) {
+            printMessage(title, text, type);
+            return;
+        }
+        try {
+            Pos position = OS.isMacOsX() ? Pos.TOP_RIGHT : Pos.BOTTOM_RIGHT;
+            notify = Notify.create()
+                .title(title)
+                .text(text)
+                .hideAfter(5000)
+                .position(position)
+                // .setScreen(0)
+                .darkStyle()
+                //.shake(1300, 10)
+                // .hideCloseButton()
+                .onAction(new ActionHandler<Notify>() {
+                    @Override
+                    public void handle(final Notify arg0) {
+//                        System.out.println("Notification clicked on!");
+                    }
+                });
+            switch (type) {
+            case INFO:
+                notify.showInformation();
+                break;
+
+            case WARNING:
+                notify.showWarning();
+                break;
+
+            case ERROR:
+                notify.showError();
+                break;
+
+            default:
+                notify.show();
+                break;
+            }
+        } catch (Exception e) {
+            printMessage(title, text, type);
+            //log.error(e);
         }
     }
 
@@ -519,7 +711,7 @@ public class LaunchUtil {
         Timer timer = new Timer();
         PrintDot task = new PrintDot();
         timer.schedule(task, 0, 2000);
-        
+
         try {
             BufferedInputStream bis = new BufferedInputStream(resource.openStream());
             JarInputStream jis = new JarInputStream(bis);
@@ -543,15 +735,15 @@ public class LaunchUtil {
                 }
                 fileOutStream.close();
             }
-            
+
         } catch (Exception exc) {
             task.cancel();
             exc.printStackTrace();
         }
         task.cancel();
-        
+
     }
-    
+
     public static void cleanUpUnpacked(File libDir) {
         if (libDir.exists() && libDir.listFiles(new ExtFilter(".gz")).length > 0) {
             for (File gz : libDir.listFiles(new ExtFilter(".gz"))) {

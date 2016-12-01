@@ -3,6 +3,9 @@ package runwar.options;
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class ServerOptions {
 	private String serverName = "default", processName = "RunWAR", loglevel = "WARN";
@@ -18,8 +21,7 @@ public class ServerOptions {
     private String cfmlServletConfigWebDir = null, cfmlServletConfigServerDir = null;
     private boolean directoryListingEnabled = true;
     private boolean cacheEnabled = false;
-    private String[] welcomeFiles = new String[] { "index.cfm", "index.cfml", "default.cfm", "index.html", "index.htm",
-            "default.html", "default.htm" };
+    private String[] welcomeFiles;
 	private File sslCertificate, sslKey, configFile;
 	private char[] sslKeyPass;
 	private char[] stopPassword = "klaatuBaradaNikto".toCharArray();
@@ -31,7 +33,12 @@ public class ServerOptions {
 	private boolean mariadb4jEnabled = false;
 	private int mariadb4jPort = 13306;
 	private File mariadb4jBaseDir, mariadb4jDataDir, mariadb4jImportSQLFile = null;
-
+	private List<String> jvmArgs = null;
+	private Map<Integer, String> errorPages = null;
+    private boolean servletRestEnabled = true;
+    private String[] servletRestMappings = { "/rest" };
+    private boolean filterPathInfoEnabled = true;
+	
 	public String getServerName() {
 	    return serverName;
 	}
@@ -101,6 +108,9 @@ public class ServerOptions {
     public ServerOptions setEnableHTTP(boolean bool) {
     	this.enableHTTP = bool;
         return this;
+    }
+    public boolean isURLRewriteApacheFormat() {
+        return getURLRewriteFile() == null ? false : getURLRewriteFile().getPath().endsWith(".htaccess");
     }
     public boolean isEnableURLRewrite() {
         return enableURLRewrite;
@@ -410,6 +420,69 @@ public class ServerOptions {
     }
     public File getMariaDB4jImportSQLFile() {
         return this.mariadb4jImportSQLFile;
+    }
+
+    public ServerOptions setJVMArgs(List<String> args) {
+        this.jvmArgs = args;
+        return this;
+    }
+    public List<String> getJVMArgs() {
+        return this.jvmArgs;
+    }
+
+    public ServerOptions setErrorPages(String errorpages) {
+        this.errorPages = new HashMap<Integer, String>();
+        String[] pageList = errorpages.split(",");
+        for (int x = 0; x < pageList.length; x++) {
+            String[] splitted = pageList[x].split("=");
+            String location = "";
+            int errorCode = 1;
+            if (splitted.length == 1) {
+                location = pageList[x].trim();
+            } else {
+                errorCode = Integer.parseInt(splitted[0].trim());
+                location = splitted[1].trim();
+            }
+            //TODO: verify we don't need to do anything different if the WAR context is something other than "/".
+            location = location.startsWith("/") ? location : "/" + location;
+            errorPages.put(errorCode,location);
+        }
+        return this;
+    }
+    public ServerOptions setErrorPages(Map<Integer, String> errorpages) {
+        this.errorPages = errorpages;
+        return this;
+    }
+    public Map<Integer, String> getErrorPages() {
+        return this.errorPages;
+    }
+
+    public ServerOptions setServletRestEnabled(boolean enabled) {
+        this.servletRestEnabled = enabled;
+        return this;
+    }
+    public boolean getServletRestEnabled() {
+        return this.servletRestEnabled;
+    }
+
+    public ServerOptions setServletRestMappings(String mappings) {
+        return setServletRestMappings(mappings.split(","));
+    }
+    public ServerOptions setServletRestMappings(String[] mappings) {
+        this.servletRestMappings = mappings;
+        return this;
+    }
+    public String[] getServletRestMappings() {
+        return this.servletRestMappings;
+    }
+
+    
+    public ServerOptions setFilterPathInfoEnabled(boolean enabled) {
+        this.filterPathInfoEnabled = enabled;
+        return this;
+    }
+    public boolean isFilterPathInfoEnabled() {
+        return this.filterPathInfoEnabled;
     }
 
 }
