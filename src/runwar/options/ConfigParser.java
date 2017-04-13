@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 
 import runwar.LaunchUtil;
 import runwar.Server;
@@ -278,13 +279,66 @@ public class ConfigParser {
             if (serverConfig.hasOption("mariadb4jimport") && serverConfig.getOptionValue("mariadb4jimport").length() > 0) {
                 serverOptions.setMariaDB4jImportSQLFile(new File(serverConfig.getOptionValue("mariadb4jimport")));
             }
+            if (serverConfig.hasOption("jvmargs") && serverConfig.getOptionValue("jvmargs").length() > 0) {
+                List<String> jvmArgs = new ArrayList<String>();
+                String[] jvmArgArray = serverConfig.getOptionValue("jvmargs").split(";");
+                for(String arg : jvmArgArray) {
+                    jvmArgs.add(arg);
+                }
+                serverOptions.setJVMArgs(jvmArgs);
+            }
+            if (serverConfig.hasOption("errorpages")) {
+                serverOptions.setErrorPages(serverConfig.getOptionValue("errorpages"));
+            }
+            if (serverConfig.hasOption("servletrest") && serverConfig.getOptionValue("servletrest").length() > 0) {
+                serverOptions.setServletRestEnabled(Boolean.valueOf(serverConfig.getOptionValue("servletrest")));
+            }
+            if (serverConfig.hasOption("servletrestmappings") && serverConfig.getOptionValue("servletrestmappings").length() > 0) {
+                serverOptions.setServletRestMappings(serverConfig.getOptionValue("servletrestmappings"));
+            }
 
+            if (serverConfig.hasOption("filterpathinfo") && serverConfig.getOptionValue("filterpathinfo").length() > 0) {
+                serverOptions.setFilterPathInfoEnabled(Boolean.valueOf(serverConfig.getOptionValue("filterpathinfo")));
+            }
+
+            if (serverConfig.hasOption("ssladdcerts") && serverConfig.getOptionValue("ssladdcerts").length() > 0) {
+                serverOptions.setSSLAddCerts(serverConfig.getOptionValue("ssladdcerts"));
+            }
+
+            if (serverConfig.hasOption("basicauthenable")) {
+                serverOptions.setEnableBasicAuth((Boolean.valueOf(serverConfig.getOptionValue("basicauthenable"))));
+            }
+            if (serverConfig.hasOption("basicauth") && serverConfig.getOptionValue("basicauth").length() > 0) {
+                if(!serverConfig.hasOption("basicauthenable") || serverConfig.hasOption("basicauthenable") && Boolean.valueOf(serverConfig.getOptionValue("basicauthenable"))) {
+                    serverOptions.setEnableBasicAuth(true);
+                }
+                serverOptions.setBasicAuth(serverConfig.getOptionValue("basicauth"));
+            }
+            if (serverConfig.hasOption("buffersize") && serverConfig.getOptionValue("buffersize").length() > 0) {
+                serverOptions.setBufferSize(Integer.valueOf(serverConfig.getOptionValue("buffersize")));
+            }
+            if (serverConfig.hasOption("iothreads") && serverConfig.getOptionValue("iothreads").length() > 0) {
+                serverOptions.setIoThreads(Integer.valueOf(serverConfig.getOptionValue("iothreads")));
+            }
+            if (serverConfig.hasOption("workerthreads") && serverConfig.getOptionValue("workerthreads").length() > 0) {
+                serverOptions.setWorkerThreads(Integer.valueOf(serverConfig.getOptionValue("workerthreads")));
+            }
+            if (serverConfig.hasOption("directbuffers")) {
+                serverOptions.setDirectBuffers(Boolean.valueOf(serverConfig.getOptionValue("directbuffers")));
+            }
+            if (serverConfig.hasOption("loadbalance") && serverConfig.getOptionValue("loadbalance").length() > 0) {
+                serverOptions.setLoadBalance(serverConfig.getOptionValue("loadbalance"));
+            }
+            if (serverConfig.hasOption("directoryrefresh") && serverConfig.getOptionValue("directoryrefresh").length() > 0) {
+                serverOptions.setDirectoryListingRefreshEnabled(Boolean.valueOf(serverConfig.getOptionValue("directoryrefresh")));
+            }
+            
             if(serverOptions.getLoglevel().equals("DEBUG")) {
                 Iterator<String> optionsIterator = serverConfig.getOptions().iterator();
                 while(optionsIterator.hasNext()) {
                     log.debug(optionsIterator.next());
                 }
-            }            
+            }
         }
         return serverOptions;
     }

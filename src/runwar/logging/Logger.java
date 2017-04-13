@@ -41,6 +41,9 @@ public class Logger {
     public void tracef(String format, Object object) {
         logf(org.jboss.logging.Logger.Level.TRACE,format,object);
     }
+    public void tracef(String format, Object... object) {
+        logf(org.jboss.logging.Logger.Level.TRACE,format,object);
+    }
     
     public void error(Object object) {
         log(org.jboss.logging.Logger.Level.ERROR, object);
@@ -94,6 +97,9 @@ public class Logger {
         case WARN:
             logger.warn(object);
             break;
+        case ERROR:
+            logger.error(object);
+            break;
         case INFO:
             logger.info(object);
             break;
@@ -120,6 +126,9 @@ public class Logger {
         case WARN:
             logger.warnf(format,object);
             break;
+        case ERROR:
+            logger.errorf(format,object);
+            break;
         case INFO:
             logger.infof(format,object);
             break;
@@ -145,6 +154,9 @@ public class Logger {
             break;
         case WARN:
             logger.warn(message,exception);
+            break;
+        case ERROR:
+            logger.error(message,exception);
             break;
         case INFO:
             logger.info(message,exception);

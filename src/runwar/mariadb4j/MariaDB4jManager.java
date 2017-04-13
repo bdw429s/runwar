@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
+
+import runwar.LaunchUtil;
 import runwar.logging.Logger;
 import static runwar.util.Reflection.invoke;
 import static runwar.util.Reflection.method;
@@ -18,11 +20,11 @@ public class MariaDB4jManager {
     private Object server;
     private String username, password, dbName = null;
     private int port;
-    private URLClassLoader classLoader;
+    private ClassLoader classLoader;
     private static Logger log = Logger.getLogger("RunwarLogger");
     volatile boolean isShuttingDown;
 
-    public MariaDB4jManager(URLClassLoader _classLoader) {
+    public MariaDB4jManager(ClassLoader _classLoader) {
         classLoader = _classLoader;
     }
 
@@ -168,12 +170,17 @@ public class MariaDB4jManager {
     public void stop() throws InterruptedException {
         isShuttingDown = true;
         System.out.println("*** Stopping MariaDB server on port " + port + " ...");
+//        LaunchUtil.displayMessage("info", "Stopping embedded mariadb server on port " + port + " ...");
+        ClassLoader OCL = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(classLoader);
         try {
             invoke(method(server.getClass(), "stop"), server);
             System.out.println("*** Stopped MariaDB server on port " + port);
         } catch (Exception e) {
             System.out.println("*** Error stopping MariaDB server on port " + port);
             e.printStackTrace();
+        } finally {
+            Thread.currentThread().setContextClassLoader(OCL);
         }
     }
 
